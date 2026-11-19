@@ -1,0 +1,91 @@
+# Reusable Python CI for every uv-managed Python repository in the unternai org.
+#
+# Callers (see workflow-templates/python-ci.yml):
+#
+#   jobs:
+#     python:
+#       uses: unternai/.github/.github/workflows/reusable-python-ci.yml@main
+#     ci:                       # the single required status check
+#       needs: [python]
+#       if: always()
+#       ...
+#
+# This repository is public, so private repositories in the org can call it (a private caller may use
+# reusable workflows from private *and* public repositories). Each caller repo's Actions policy must allow
+# actions and reusable workflows from unternai.
+name: Reusable Python CI
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: Python version uv should use (exported as UV_PYTHON).
+        type: string
+        default: "3.12"
+      working-directory:
+        description: Directory holding pyproject.toml and uv.lock, relative to the repository root.
+        type: string
+        default: "."
+      private-deps-app-client-id:
+        description: >-
+          Optional. Client ID of an org GitHub App that can read the private repositories used as uv git
+          dependencies. When set, an installation token is minted and git is configured to use it for
+          https://github.com/ URLs. Leave empty when the project has no private git dependencies.
+        type: string
+        default: ""
+    secrets:
+      PRIVATE_DEPS_APP_PRIVATE_KEY:
+        description: Private key of that GitHub App. Only needed with private-deps-app-client-id.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  python-ci:
+    name: python-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mint token for private git dependencies
+        id: app-token
+        if: inputs.private-deps-app-client-id != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ inputs.private-deps-app-client-id }}
+          private-key: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+
+      - name: Configure git to fetch private dependencies with the token
+        if: steps.app-token.outcome == 'success'
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ inputs.python-version }}
+          working-directory: ${{ inputs.working-directory }}
+          enable-cache: true
+
+      - name: Install dependencies (lockfile must be up to date)
+        run: uv sync --locked
+
+      - name: Lint (ruff check)
+        run: uv run --locked ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run --locked ruff format --check .
+
+      - name: Test (pytest)
+        run: uv run --locked pytest

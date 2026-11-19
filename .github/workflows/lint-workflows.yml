@@ -1,0 +1,37 @@
+# Lints the reusable workflows and workflow templates in this repository with actionlint
+# (shellcheck is preinstalled on ubuntu-latest, so `run:` scripts are checked too).
+# The job is named `ci` so this repository satisfies the org ruleset's required status check `ci`.
+# No path filters on purpose: a required check that never runs would block every pull request.
+name: Lint workflows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+
+      - name: Run actionlint
+        run: uvx --from actionlint-py==1.7.12.25 actionlint -color .github/workflows/*.yml workflow-templates/*.yml

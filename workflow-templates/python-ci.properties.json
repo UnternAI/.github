@@ -1,0 +1,7 @@
+{
+  "name": "Untern Python CI",
+  "description": "uv sync --locked, ruff check, ruff format --check and pytest via the org reusable workflow, gated by a single required `ci` check.",
+  "iconName": "octicon checklist",
+  "categories": ["Continuous integration", "Python"],
+  "filePatterns": ["^pyproject\\.toml$", "^uv\\.lock$"]
+}

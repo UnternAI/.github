@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/unternai/.github/blob/main/SECURITY.md
+    about: Please report vulnerabilities privately (security@untern.ai or GitHub private vulnerability reporting), never in a public issue.
+  - name: Product or account support
+    url: https://untern.ai
+    about: For help with Untern products or your account, contact support@untern.ai.
+  - name: Code of Conduct concern
+    url: https://github.com/unternai/.github/blob/main/CODE_OF_CONDUCT.md
+    about: Report conduct concerns privately to conduct@untern.ai.

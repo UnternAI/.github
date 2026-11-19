@@ -1,0 +1,47 @@
+# Untern Python CI (workflow template). Requires a uv project: pyproject.toml + uv.lock.
+#
+# - `python` calls the org's reusable workflow: uv sync --locked, ruff check, ruff format --check, pytest.
+# - `ci` is the gate job and the ONLY required status check in the org rulesets. It always runs and fails
+#   if any needed job did not succeed. Checks of a called workflow are reported as
+#   "<caller job> / <called job>", so the gate job is what produces a check named exactly `ci`.
+#
+# The reusable workflow is referenced by branch (@main) rather than a commit SHA because unternai/.github
+# is maintained by the org itself (protected main branch). Pin to a SHA if you need fully frozen CI.
+name: CI
+
+on:
+  push:
+    branches: [$default-branch]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    uses: unternai/.github/.github/workflows/reusable-python-ci.yml@main
+    with:
+      python-version: "3.12"
+      working-directory: "."
+      # Only needed for private uv git dependencies; empty (skipped) when the org variable is unset.
+      private-deps-app-client-id: ${{ vars.PRIVATE_DEPS_APP_CLIENT_ID }}
+    secrets:
+      PRIVATE_DEPS_APP_PRIVATE_KEY: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+
+  ci:
+    if: always()
+    needs: [python]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail unless every needed job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "Job results: ${RESULTS}"
+          jq -e 'all(.[]; . == "success")' <<< "${RESULTS}" > /dev/null
