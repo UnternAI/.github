@@ -28,9 +28,33 @@ By participating you agree to follow our [Code of Conduct](https://github.com/un
 
    For TypeScript projects: `pnpm install`, `pnpm lint`, `pnpm typecheck`, `pnpm test`.
 4. Open a pull request and fill in the template. Link the issue it resolves (for example `Closes #123`).
-5. A required status check named **`ci`** must pass, and review conversations must be resolved, before a pull
+5. Target `dev` (see below). A required status check named **`ci`** must pass, and review conversations must be resolved, before a pull
    request can be merged. Pull requests are **squash-merged**, so the pull request title becomes the commit
    message — please write it in the imperative mood, for example `Fix token refresh race`.
+
+## Branches: `dev`, then `main`
+
+Every repository with CI has two long-lived branches:
+
+| Branch | What it is | Who merges into it |
+|---|---|---|
+| `dev` (default) | Integration. Every feature or fix PR targets it. | Any member, once `ci` passes |
+| `main` | Released code. A push here deploys or releases (for example untern.ai through Cloudflare Pages; tags `v*` publish packages). | Only a release PR from `dev` |
+
+How it runs:
+
+1. Branch from `dev`, open the PR against `dev` (the default, so `gh pr create` does it). CI runs once on the PR.
+2. Merging into `dev` starts no CI or deploy run. Merge as soon as the PR is green; batch freely.
+3. When `dev` holds something worth shipping (usually once a day, or when a fix is urgent), open one release PR
+   `dev` → `main`. CI runs on it once, and the push to `main` deploys. Merge it with a merge commit (not squash), so
+   `dev` and `main` keep the same history and the next release PR shows only new work.
+4. Hotfix: branch from `main`, PR into `main`, then merge `main` back into `dev`.
+
+Why: merging every PR straight into `main` ran CI and a deploy for each one. With `dev`, each change is checked once
+on its PR, and `main` builds and deploys once per release.
+
+Repositories that already had their own integration branch keep it (for example `untern-jobs-radar` uses
+`staging`). Forks of upstream projects follow their upstream flow.
 
 ## Commit and pull request titles
 
