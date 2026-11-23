@@ -1,6 +1,6 @@
 ## What and why
 
-<!-- What does this PR change, and why? Link the issue: "Closes #123". -->
+<!-- What does this PR change, and why? Link the Linear issue: "Closes UNT-123". -->
 
 ## How to test
 
