@@ -2,9 +2,12 @@
 # ghcr.io/unternai/<image> (org convention: untern-org AGENTS.md, "Container images").
 #
 # Tags: the short commit SHA always; `dev` when the run is on refs/heads/dev; the version (`1.2.3` from tag
-# `v1.2.3`) when the run is on a tag. Labels: org.opencontainers.image.source (this repo's URL, which also
-# links the package to the repo, so it stays private like the repo), .revision, .created and the rest
-# that docker/metadata-action derives.
+# `v1.2.3`) when the run is on a version tag. Labels: org.opencontainers.image.source (the caller repo's
+# URL, which links the package to the repo, so it stays private like the repo), .revision, .created,
+# .version and .title.
+#
+# Only GitHub-owned actions and the Docker CLI preinstalled on ubuntu-latest (BuildKit, buildx): the org
+# repos allow GitHub-owned actions plus a short list, and docker/* actions are not on it.
 #
 # Caller (one job per image; grant packages: write on that job only, the called job cannot gain it):
 #
@@ -25,8 +28,9 @@
 #         PRIVATE_DEPS_APP_PRIVATE_KEY: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
 #
 # With private-deps-app-client-id set, the job mints a read-only installation token and hands it to the
-# build as the BuildKit secret `private-deps-secret-id` (default `github_token`). The Dockerfile reads it
-# with `RUN --mount=type=secret,id=github_token ...`; it never becomes a build arg, a layer or a label.
+# build as the BuildKit secret `private-deps-secret-id` (default `github_token`), read from an environment
+# variable. The Dockerfile reads it with `RUN --mount=type=secret,id=github_token ...`; it never becomes a
+# build arg, a file in the context, a layer or a label.
 name: GHCR image
 
 on:
@@ -48,10 +52,6 @@ on:
         description: Push the image to GHCR. False builds only (pull requests).
         type: boolean
         default: false
-      platforms:
-        description: Target platforms (comma-separated).
-        type: string
-        default: linux/amd64
       build-args:
         description: Optional build arguments, one KEY=value per line. Never a secret.
         type: string
@@ -78,7 +78,7 @@ on:
         description: Tags built (and pushed when push is true), one per line.
         value: ${{ jobs.image.outputs.tags }}
       digest:
-        description: Image digest (sha256:...).
+        description: Pushed image digest (sha256:...); empty when push is false.
         value: ${{ jobs.image.outputs.digest }}
 
 permissions:
@@ -93,18 +93,46 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ghcr.io/unternai/${{ inputs.image }}
+      image: ${{ steps.meta.outputs.image }}
       tags: ${{ steps.meta.outputs.tags }}
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - name: Check the image name
+      - name: Tags and OCI labels
+        id: meta
         env:
-          IMAGE: ${{ inputs.image }}
+          IMAGE_NAME: ${{ inputs.image }}
+          # On pull requests, tag and label the head commit, not GitHub's test merge commit.
+          REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if ! [[ "${IMAGE}" =~ ^untern-[a-z0-9]+(-[a-z0-9]+)+$ ]]; then
-            echo "::error::image '${IMAGE}' must be untern-<product>-<component> (lowercase kebab-case)"
+          set -euo pipefail
+          if ! [[ "${IMAGE_NAME}" =~ ^untern-[a-z0-9]+(-[a-z0-9]+)+$ ]]; then
+            echo "::error::image '${IMAGE_NAME}' must be untern-<product>-<component> (lowercase kebab-case)"
             exit 1
           fi
+          image="ghcr.io/unternai/${IMAGE_NAME}"
+          short="${REVISION:0:7}"
+          version="${short}"
+          tags=("${image}:${short}")
+          if [ "${GITHUB_REF}" = "refs/heads/dev" ]; then
+            tags+=("${image}:dev")
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            tags+=("${image}:${version}")
+          fi
+          {
+            echo "image=${image}"
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+            echo "labels<<EOF"
+            echo "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            echo "org.opencontainers.image.revision=${REVISION}"
+            echo "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "org.opencontainers.image.version=${version}"
+            echo "org.opencontainers.image.title=${IMAGE_NAME}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,59 +149,56 @@ jobs:
           owner: ${{ github.repository_owner }}
           permission-contents: read
 
-      - name: Tags and OCI labels
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        env:
-          # On pull requests, label and tag the head commit, not GitHub's test merge commit.
-          DOCKER_METADATA_PR_HEAD_SHA: "true"
-        with:
-          images: ghcr.io/unternai/${{ inputs.image }}
-          flavor: |
-            latest=false
-          tags: |
-            type=sha,prefix=,format=short
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
-            type=semver,pattern={{version}}
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
       - name: Log in to GHCR
         if: inputs.push
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build${{ inputs.push && ' and push' || '' }}
         id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile }}
-          platforms: ${{ inputs.platforms }}
-          push: ${{ inputs.push }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
-          build-args: ${{ inputs.build-args }}
-          secrets: ${{ steps.app-token.outputs.token != '' && format('{0}={1}', inputs.private-deps-secret-id, steps.app-token.outputs.token) || '' }}
-          cache-from: type=gha,scope=${{ inputs.image }}
-          cache-to: type=gha,mode=max,scope=${{ inputs.image }}
+        env:
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          PUSH: ${{ inputs.push }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+          BUILD_ARGS: ${{ inputs.build-args }}
+          SECRET_ID: ${{ inputs.private-deps-secret-id }}
+          PRIVATE_DEPS_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          args=(--file "${DOCKERFILE}" --platform linux/amd64 --provenance=false)
+          while IFS= read -r tag; do [ -n "${tag}" ] && args+=(--tag "${tag}"); done <<< "${TAGS}"
+          while IFS= read -r label; do [ -n "${label}" ] && args+=(--label "${label}"); done <<< "${LABELS}"
+          while IFS= read -r arg; do [ -n "${arg}" ] && args+=(--build-arg "${arg}"); done <<< "${BUILD_ARGS}"
+          if [ -n "${PRIVATE_DEPS_TOKEN}" ]; then
+            # BuildKit reads the value from this step's environment; nothing is written to disk.
+            args+=(--secret "id=${SECRET_ID},env=PRIVATE_DEPS_TOKEN")
+          fi
+          if [ "${PUSH}" = "true" ]; then
+            args+=(--push --metadata-file "${RUNNER_TEMP}/build-metadata.json")
+          fi
+          docker buildx build "${args[@]}" "${CONTEXT}"
+          if [ "${PUSH}" = "true" ]; then
+            digest="$(jq -r '."containerimage.digest" // empty' "${RUNNER_TEMP}/build-metadata.json")"
+            echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Summary
+        if: always()
         env:
           PUSHED: ${{ inputs.push }}
+          OUTCOME: ${{ steps.build.outcome }}
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           {
-            if [ "${PUSHED}" = "true" ]; then echo "### Pushed"; else echo "### Built (not pushed)"; fi
+            if [ "${OUTCOME}" != "success" ]; then echo "### Build ${OUTCOME}";
+            elif [ "${PUSHED}" = "true" ]; then echo "### Pushed"; else echo "### Built (not pushed)"; fi
             echo
             echo '```'
             echo "${TAGS}"
-            echo "digest ${DIGEST}"
+            if [ -n "${DIGEST}" ]; then echo "digest ${DIGEST}"; fi
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
