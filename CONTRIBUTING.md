@@ -1,21 +1,21 @@
 # Contributing to Untern projects
 
-Thanks for your interest in contributing! This guide applies to every repository in the
+This guide applies to every repository in the
 [`unternai`](https://github.com/unternai) organization that does not ship its own `CONTRIBUTING.md`.
 
 By participating you agree to follow our [Code of Conduct](https://github.com/unternai/.github/blob/main/CODE_OF_CONDUCT.md).
 
 ## Before you start
 
-- **Security issues:** never open a public issue — follow our [Security Policy](https://github.com/unternai/.github/blob/main/SECURITY.md).
-- **Questions and help:** see [SUPPORT.md](https://github.com/unternai/.github/blob/main/SUPPORT.md).
-- **Bugs and feature ideas:** search existing issues first, then open a new one using the issue forms. For anything
-  larger than a small fix, please open an issue and get agreement on the approach before writing code.
+- Security issues: never open a public issue. Follow our [Security Policy](https://github.com/unternai/.github/blob/main/SECURITY.md).
+- Questions and help: see [SUPPORT.md](https://github.com/unternai/.github/blob/main/SUPPORT.md).
+- Bugs and feature ideas: search existing issues first, then open a new one with the issue forms. For anything
+  larger than a small fix, open an issue and agree on the approach before writing code.
 
 ## Making a change
 
 1. Fork the repository (external contributors) or create a branch (organization members). Branch names such as
-   `fix/short-description` or `feat/short-description` are appreciated.
+   `fix/short-description` or `feat/short-description`.
 2. Keep each pull request focused on one logical change. Add or update tests and documentation with the code.
 3. Run the project's checks locally before pushing. For our Python projects this is usually:
 
@@ -28,9 +28,9 @@ By participating you agree to follow our [Code of Conduct](https://github.com/un
 
    For TypeScript projects: `pnpm install`, `pnpm lint`, `pnpm typecheck`, `pnpm test`.
 4. Open a pull request and fill in the template. Link the issue it resolves (for example `Closes #123`).
-5. Target `dev` (see below). A required status check named **`ci`** must pass, and review conversations must be resolved, before a pull
-   request can be merged. Pull requests are **squash-merged**, so the pull request title becomes the commit
-   message — please write it in the imperative mood, for example `Fix token refresh race`.
+5. Target `dev` (see below). A required status check named `ci` must pass, and review conversations must be resolved, before a pull
+   request can be merged. Pull requests are squash-merged, so the pull request title becomes the commit
+   message. Write it in the imperative mood, for example `Fix token refresh race`.
 
 ## Branches: `dev`, then `main`
 

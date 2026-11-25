@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Untern has adopted the **[Contributor Covenant, version 3.0](https://www.contributor-covenant.org/version/3/0/code_of_conduct/)**
+Untern has adopted the [Contributor Covenant, version 3.0](https://www.contributor-covenant.org/version/3/0/code_of_conduct/)
 as the code of conduct for every repository, issue tracker, discussion, pull request and community space run by
 Untern (the `unternai` GitHub organization included).
 
@@ -15,9 +15,9 @@ it. In short, we expect participants to:
 ## Reporting
 
 If you experience or witness behavior that violates the code of conduct, email
-**[conduct@untern.ai](mailto:conduct@untern.ai)**. Reports are read only by the people responsible for enforcement, and
+[conduct@untern.ai](mailto:conduct@untern.ai). Reports are read only by the people responsible for enforcement, and
 we keep the identity of the reporter confidential. If a report concerns one of those people, they will not take part
-in handling it. We aim to acknowledge every report within **3 business days**.
+in handling it. We aim to acknowledge every report within 3 business days.
 
 ## Enforcement
 
