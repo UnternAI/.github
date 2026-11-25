@@ -13,6 +13,7 @@ put nothing secret or internal here. Member-only content lives in `unternai/.git
 | `.github/pull_request_template.md` | Default PR template |
 | `workflow-templates/*.yml` + `*.properties.json` | Workflow templates shown under Actions → New workflow in every org repo |
 | `.github/workflows/reusable-python-ci.yml` | Reusable workflow (`on: workflow_call`) for Python CI: `uv sync --locked`, ruff check, ruff format --check, pytest |
+| `.github/workflows/ghcr-image.yml` | Reusable workflow (`on: workflow_call`) that builds one image from a Dockerfile and pushes it to `ghcr.io/unternai/<image>`: short-SHA, `dev` and version tags, OCI labels, optional private-deps App token as a BuildKit secret |
 | `.github/workflows/lint-workflows.yml` | This repo's own CI: actionlint (+ shellcheck) on workflows and workflow templates; job named `ci` |
 
 ## GitHub behavior to know (checked on docs.github.com, 2026-11)

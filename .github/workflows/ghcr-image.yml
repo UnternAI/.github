@@ -1,0 +1,179 @@
+# Reusable workflow: build one container image from a Dockerfile and, when asked, push it to GHCR as
+# ghcr.io/unternai/<image> (org convention: untern-org AGENTS.md, "Container images").
+#
+# Tags: the short commit SHA always; `dev` when the run is on refs/heads/dev; the version (`1.2.3` from tag
+# `v1.2.3`) when the run is on a tag. Labels: org.opencontainers.image.source (this repo's URL, which also
+# links the package to the repo, so it stays private like the repo), .revision, .created and the rest
+# that docker/metadata-action derives.
+#
+# Caller (one job per image; grant packages: write on that job only, the called job cannot gain it):
+#
+#   jobs:
+#     api-image:
+#       permissions:
+#         contents: read
+#         packages: write
+#       uses: unternai/.github/.github/workflows/ghcr-image.yml@<commit SHA>
+#       with:
+#         image: untern-unfold-api
+#         context: "."
+#         dockerfile: api/Dockerfile
+#         push: ${{ github.event_name != 'pull_request' }}
+#         # Optional: private uv/pnpm git dependencies, same GitHub App as reusable-python-ci.yml.
+#         private-deps-app-client-id: ${{ vars.PRIVATE_DEPS_APP_CLIENT_ID }}
+#       secrets:
+#         PRIVATE_DEPS_APP_PRIVATE_KEY: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+#
+# With private-deps-app-client-id set, the job mints a read-only installation token and hands it to the
+# build as the BuildKit secret `private-deps-secret-id` (default `github_token`). The Dockerfile reads it
+# with `RUN --mount=type=secret,id=github_token ...`; it never becomes a build arg, a layer or a label.
+name: GHCR image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image name without the registry, `untern-<product>-<component>` (pushed as ghcr.io/unternai/<image>).
+        type: string
+        required: true
+      context:
+        description: Build context, relative to the repository root.
+        type: string
+        default: "."
+      dockerfile:
+        description: Dockerfile path, relative to the repository root.
+        type: string
+        default: Dockerfile
+      push:
+        description: Push the image to GHCR. False builds only (pull requests).
+        type: boolean
+        default: false
+      platforms:
+        description: Target platforms (comma-separated).
+        type: string
+        default: linux/amd64
+      build-args:
+        description: Optional build arguments, one KEY=value per line. Never a secret.
+        type: string
+        default: ""
+      private-deps-app-client-id:
+        description: >-
+          Optional. Client ID of the org GitHub App that reads the private repositories the build fetches.
+          Leave empty when the build needs no private repository.
+        type: string
+        default: ""
+      private-deps-secret-id:
+        description: BuildKit secret id under which the App token reaches the Dockerfile.
+        type: string
+        default: github_token
+    secrets:
+      PRIVATE_DEPS_APP_PRIVATE_KEY:
+        description: Private key of that GitHub App. Only needed with private-deps-app-client-id.
+        required: false
+    outputs:
+      image:
+        description: Image reference without a tag (ghcr.io/unternai/<image>).
+        value: ${{ jobs.image.outputs.image }}
+      tags:
+        description: Tags built (and pushed when push is true), one per line.
+        value: ${{ jobs.image.outputs.tags }}
+      digest:
+        description: Image digest (sha256:...).
+        value: ${{ jobs.image.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ghcr.io/unternai/${{ inputs.image }}
+      tags: ${{ steps.meta.outputs.tags }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Check the image name
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          if ! [[ "${IMAGE}" =~ ^untern-[a-z0-9]+(-[a-z0-9]+)+$ ]]; then
+            echo "::error::image '${IMAGE}' must be untern-<product>-<component> (lowercase kebab-case)"
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mint token for private dependencies
+        id: app-token
+        if: inputs.private-deps-app-client-id != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ inputs.private-deps-app-client-id }}
+          private-key: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+
+      - name: Tags and OCI labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # On pull requests, label and tag the head commit, not GitHub's test merge commit.
+          DOCKER_METADATA_PR_HEAD_SHA: "true"
+        with:
+          images: ghcr.io/unternai/${{ inputs.image }}
+          flavor: |
+            latest=false
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=semver,pattern={{version}}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        if: inputs.push
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build${{ inputs.push && ' and push' || '' }}
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: ${{ inputs.build-args }}
+          secrets: ${{ steps.app-token.outputs.token != '' && format('{0}={1}', inputs.private-deps-secret-id, steps.app-token.outputs.token) || '' }}
+          cache-from: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image }}
+
+      - name: Summary
+        env:
+          PUSHED: ${{ inputs.push }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            if [ "${PUSHED}" = "true" ]; then echo "### Pushed"; else echo "### Built (not pushed)"; fi
+            echo
+            echo '```'
+            echo "${TAGS}"
+            echo "digest ${DIGEST}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
